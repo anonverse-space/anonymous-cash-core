@@ -3,6 +3,7 @@ require('dotenv').config({ path: '../.env' })
 const ETHTornado = artifacts.require('ETHTornado')
 const Verifier = artifacts.require('Verifier')
 const Hasher = artifacts.require('Hasher')
+const { toWei } = require('web3-utils')
 
 module.exports = function (deployer) {
   return deployer.then(async () => {
@@ -13,7 +14,7 @@ module.exports = function (deployer) {
       ETHTornado,
       verifier.address,
       hasher.address,
-      ETH_AMOUNT,
+      toWei(ETH_AMOUNT),
       MERKLE_TREE_HEIGHT,
     )
     console.log('ETHTornado address', tornado.address)

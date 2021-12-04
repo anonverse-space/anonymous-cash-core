@@ -45,6 +45,16 @@ module.exports = {
       // timeoutBlocks: 200,
       skipDryRun: true,
     },
+    bsc_testnet: {
+      provider: () =>
+        new HDWalletProvider(process.env.PRIVATE_KEY, 'https://data-seed-prebsc-1-s1.binance.org:8545/'),
+      network_id: 97,
+      gas: 6000000,
+      // gasPrice: utils.toWei('1', 'gwei'),
+      // confirmations: 1,
+      // timeoutBlocks: 200,
+      // skipDryRun: true,
+    },
     rinkeby: {
       provider: () =>
         new HDWalletProvider(

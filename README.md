@@ -8,6 +8,55 @@ Later, the user decides to make a withdrawal. To do that, the user should provid
 
 You can read more about it in [this Medium article](https://medium.com/@tornado.cash/introducing-private-transactions-on-ethereum-now-42ee915babe0)
 
+## Quick Start
+
+### Set `.env`
+
+```
+cp .env.example .env
+```
+
+Change the PRIVATE_KEY to yours, fund the associated address with Testnet BNB at
+<https://testnet.binance.org/faucet-smart>.
+
+### Install Dependencies
+
+```
+yarn install
+yarn asset
+```
+
+### Deploy Contracts
+
+There is already a deployed contract in the `.env.example`, run this only if you want to deploy a new contract yourself.
+
+```
+yarn build:contract
+yarn migrate:bsc_testnet
+```
+
+Change the `CONTRACT_ADDRESS` in `.env` to the address of the deployed contract `ETHTornado`,
+and the `CONTRACT_CREATE_BLOCK` to the block number where the contract was deployed.
+
+### Run The Demo
+
+```
+❯ yarn demo
+yarn run v1.22.15
+$ node src/minimal-demo.js
+web3-shh package will be deprecated in version 1.3.5 and will no longer be supported.
+web3-bzz package will be deprecated in version 1.3.5 and will no longer be supported.
+Sending deposit transaction...
+https://testnet.bscscan.com/tx/0x7b6f5590ff5c086fe52a1fd51dc2ea3bb59237855055eecc431054de1c6ffb58
+Deposited note: anonymous-bnb-0.01-97-0x5236e309785026273549c42b93f05348acc6546d8e05cd22d4081017097ed53f58371871ccae4205daa159a770eeeb71a24c17efa5eb6cc59833eb6476bc
+Getting contract state...
+Generating SNARK proof...
+Sending withdrawal transaction...
+https://testnet.bscscan.com/tx/0x2cfbdf1b86891b432ef963405aa6a8ef20387ac062bbc02f6225c6eeb8deff55
+Done
+✨  Done in 19.49s.
+```
+
 ## Specs
 
 - Deposit gas cost: 1088354 (43381 + 50859 \* tree_depth)
