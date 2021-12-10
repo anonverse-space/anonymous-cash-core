@@ -21,7 +21,7 @@ Change the PRIVATE_KEY to yours, fund the associated address with Testnet BNB at
 
 ```
 yarn install
-yarn asset
+yarn assets
 ```
 
 ### Deploy Contracts
