@@ -68,7 +68,7 @@ async function withdraw(note, recipient) {
 }
 
 /**
- * Parses Tornado.cash note
+ * Parses Anonymous.cash note
  * @param noteString the note
  */
 function parseNote(noteString) {
@@ -186,7 +186,7 @@ async function main() {
   proving_key = fs.readFileSync(__dirname + '/../assets/circuits/withdraw_proving_key.bin').buffer
   groth16 = await buildGroth16()
   netId = await web3.eth.net.getId()
-  contract = new web3.eth.Contract(require('../build/contracts/ETHTornado.json').abi, CONTRACT_ADDRESS)
+  contract = new web3.eth.Contract(require('../build/contracts/ETHAnonymous.json').abi, CONTRACT_ADDRESS)
   const account = web3.eth.accounts.privateKeyToAccount(PRIVATE_KEY)
   web3.eth.accounts.wallet.add(PRIVATE_KEY)
   // eslint-disable-next-line require-atomic-updates

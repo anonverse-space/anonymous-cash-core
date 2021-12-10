@@ -25,7 +25,7 @@
     "prettier:check": "prettier --check . --config .prettierrc",
     "prettier:fix": "prettier --write . --config .prettierrc",
     "lint": "yarn eslint && yarn prettier:check",
-    "flat": "npx truffle-flattener contracts/ETHTornado.sol > ETHTornado_flat.sol && npx truffle-flattener contracts/ERC20Tornado.sol > ERC20Tornado_flat.sol",
+    "flat": "npx truffle-flattener contracts/ETHAnonymous.sol > ETHTornado_flat.sol && npx truffle-flattener contracts/ERC20Tornado.sol > ERC20Tornado_flat.sol",
     "demo": "node src/minimal-demo.js",
     "download": "node scripts/downloadKeys.js"
   },
