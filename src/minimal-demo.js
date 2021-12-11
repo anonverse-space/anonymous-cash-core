@@ -1,4 +1,5 @@
 require('dotenv').config()
+const axios = require('axios')
 const fs = require('fs')
 const assert = require('assert')
 const { bigInt } = require('snarkjs')
@@ -8,16 +9,18 @@ const merkleTree = require('fixed-merkle-tree')
 const Web3 = require('web3')
 const buildGroth16 = require('websnark/src/groth16')
 const websnarkUtils = require('websnark/src/utils')
-const { toWei } = require('web3-utils')
+const { toWei, toBN, fromWei } = require('web3-utils')
 
-const RPC_URL = 'https://data-seed-prebsc-1-s1.binance.org:8545/'
-const BLOCK_EXPLORER_URL = 'https://testnet.bscscan.com'
 let web3, contract, netId, circuit, proving_key, groth16
 const MERKLE_TREE_HEIGHT = process.env.MERKLE_TREE_HEIGHT
 const PRIVATE_KEY = process.env.PRIVATE_KEY
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS
 const CONTRACT_CREATE_BLOCK = parseInt(process.env.CONTRACT_CREATE_BLOCK)
 const AMOUNT = process.env.ETH_AMOUNT
+const RELAYER_URL = process.env.RELAYER_URL
+const RPC_URL = process.env.RPC_URL
+const BLOCK_EXPLORER_URL = process.env.BLOCK_EXPLORER_URL
+console.log({ RELAYER_URL, RPC_URL, BLOCK_EXPLORER_URL })
 
 /** Generate random number of specified byte length */
 const rbigint = (nbytes) => bigInt.leBuff2int(crypto.randomBytes(nbytes))
@@ -29,6 +32,63 @@ const pedersenHash = (data) => circomlib.babyJub.unpackPoint(circomlib.pedersenH
 const toHex = (number, length = 32) =>
   '0x' +
   (number instanceof Buffer ? number.toString('hex') : bigInt(number).toString(16)).padStart(length * 2, '0')
+
+/**
+ * Waits for transaction to be mined
+ * @param txHash Hash of transaction
+ * @param attempts
+ * @param delay
+ */
+function waitForTxReceipt({ txHash, attempts = 60, delay = 1000 }) {
+  return new Promise((resolve, reject) => {
+    const checkForTx = async (txHash, retryAttempt = 0) => {
+      const result = await web3.eth.getTransactionReceipt(txHash)
+      if (!result || !result.blockNumber) {
+        if (retryAttempt <= attempts) {
+          setTimeout(() => checkForTx(txHash, retryAttempt + 1), delay)
+        } else {
+          reject(new Error('tx was not mined'))
+        }
+      } else {
+        resolve(result)
+      }
+    }
+    checkForTx(txHash)
+  })
+}
+
+function getStatus(id, relayerURL) {
+  return new Promise((resolve) => {
+    async function getRelayerStatus() {
+      const responseStatus = await axios.get(relayerURL + '/v1/jobs/' + id)
+
+      if (responseStatus.status === 200) {
+        const { txHash, status, confirmations, failedReason } = responseStatus.data
+
+        console.log(`Current job status ${status}, confirmations: ${confirmations}`)
+
+        if (status === 'FAILED') {
+          throw new Error(status + ' failed reason:' + failedReason)
+        }
+
+        if (status === 'CONFIRMED') {
+          const receipt = await waitForTxReceipt({ txHash })
+          console.log(
+            `Transaction submitted through the relay. View transaction on bscscan https://${BLOCK_EXPLORER_URL}/tx/${txHash}`,
+          )
+          console.log('Transaction mined in block', receipt.blockNumber)
+          resolve(status)
+        }
+      }
+
+      setTimeout(() => {
+        getRelayerStatus(id, relayerURL)
+      }, 3000)
+    }
+
+    getRelayerStatus()
+  })
+}
 
 /**
  * Create deposit object from secret and nullifier
@@ -67,6 +127,51 @@ async function withdraw(note, recipient) {
   console.log(`${BLOCK_EXPLORER_URL}/tx/${tx.transactionHash}`)
 }
 
+async function withdrawViaRelayer(note, recipient, relayerURL) {
+  console.log({ note, recipient, relayerURL })
+  const deposit = parseNote(note)
+  console.log(deposit)
+  console.log(relayerURL + '/status')
+  const relayerStatus = await axios.get(relayerURL + '/status')
+  console.log(relayerStatus.data)
+  const withdrawContract = relayerStatus.data.instances.bnb.instanceAddress[deposit.amount]
+  console.log({ withdrawContract, addr: contract._address })
+  const { rewardAccount, gasLimits, minGasPrice, relayerServiceFeeRate } = relayerStatus.data
+  console.log({ rewardAccount, gasLimits, minGasPrice, relayerServiceFeeRate })
+  // calculate fee
+  // fee = minGasPrice * gasLimits.TORNADO_WITHDRAW + amount * tornadoServiceFee
+  const relayerServiceFee = toBN(toWei(deposit.amount, 'ether'))
+    .mul(toBN(relayerServiceFeeRate))
+    .div(toBN('1000000'))
+  const txFee = toBN(toWei(minGasPrice.toString(), 'gwei')).mul(toBN(gasLimits.TORNADO_WITHDRAW))
+  const fee = relayerServiceFee.add(txFee)
+  console.log(fromWei(relayerServiceFee), fromWei(txFee), fromWei(fee))
+  const { proof, args } = await generateSnarkProof(
+    deposit,
+    recipient,
+    bigInt(rewardAccount),
+    bigInt(fee.toString()),
+  )
+  // const tx = await contract.methods.withdraw(proof, ...args).send({ from: web3.eth.defaultAccount, gas: 1e6 })
+  // console.log(`${BLOCK_EXPLORER_URL}/tx/${tx.transactionHash}`)
+  // return
+  // console.log({ proof, args })
+  // send withdrawal request to relayer
+  const data = {
+    proof,
+    args,
+    contract: withdrawContract,
+    gasPrice: toWei(minGasPrice.toString(), 'gwei'),
+  }
+  console.log(data)
+  const withdrawRes = await axios.post(relayerURL + '/v1/withdraw', data)
+  console.log(withdrawRes.data)
+  const { id } = withdrawRes.data
+
+  const result = await getStatus(id, relayerURL)
+  console.log('STATUS', result)
+}
+
 /**
  * Parses Anonymous.cash note
  * @param noteString the note
@@ -79,7 +184,13 @@ function parseNote(noteString) {
   const buf = Buffer.from(match.groups.note, 'hex')
   const nullifier = bigInt.leBuff2int(buf.slice(0, 31))
   const secret = bigInt.leBuff2int(buf.slice(31, 62))
-  return createDeposit(nullifier, secret)
+  // return createDeposit(nullifier, secret)
+  return {
+    currency: match.groups.currency,
+    amount: match.groups.amount,
+    netId: match.groups.netId,
+    ...createDeposit(nullifier, secret),
+  }
 }
 
 async function getPastEventsByStep(step = 5000) {
@@ -141,7 +252,7 @@ async function generateMerkleProof(deposit) {
  * @param deposit Deposit object
  * @param recipient Funds recipient
  */
-async function generateSnarkProof(deposit, recipient) {
+async function generateSnarkProof(deposit, recipient, relayer = 0, fee = 0) {
   // Compute merkle proof of our commitment
   const { root, pathElements, pathIndices } = await generateMerkleProof(deposit)
 
@@ -151,8 +262,8 @@ async function generateSnarkProof(deposit, recipient) {
     root: root,
     nullifierHash: deposit.nullifierHash,
     recipient: bigInt(recipient),
-    relayer: 0,
-    fee: 0,
+    relayer,
+    fee,
     refund: 0,
 
     // Private snark inputs
@@ -194,7 +305,11 @@ async function main() {
 
   const note = await deposit()
   console.log('Deposited note:', note)
-  await withdraw(note, web3.eth.defaultAccount)
+  if(RELAYER_URL) {
+    await withdrawViaRelayer(note, web3.eth.defaultAccount, RELAYER_URL)
+  } else {
+    await withdraw(note, web3.eth.defaultAccount)
+  }
   console.log('Done')
   process.exit()
 }
