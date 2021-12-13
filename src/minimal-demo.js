@@ -33,6 +33,18 @@ const toHex = (number, length = 32) =>
   '0x' +
   (number instanceof Buffer ? number.toString('hex') : bigInt(number).toString(16)).padStart(length * 2, '0')
 
+const sleep = (milliseconds) => {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+const waitForRecipient = async (transactonHash) => {
+  let transactionReceipt = null
+  while (transactionReceipt == null) { // Waiting expectedBlockTime until the transaction is mined
+    transactionReceipt = await web3.eth.getTransactionReceipt(transactonHash);
+    await sleep(3000)
+  }
+}
+
 /**
  * Waits for transaction to be mined
  * @param txHash Hash of transaction
@@ -74,7 +86,7 @@ function getStatus(id, relayerURL) {
         if (status === 'CONFIRMED') {
           const receipt = await waitForTxReceipt({ txHash })
           console.log(
-            `Transaction submitted through the relay. View transaction on bscscan https://${BLOCK_EXPLORER_URL}/tx/${txHash}`,
+            `Transaction submitted through the relay. View transaction on bscscan ${BLOCK_EXPLORER_URL}/tx/${txHash}`,
           )
           console.log('Transaction mined in block', receipt.blockNumber)
           resolve(status)
@@ -111,6 +123,7 @@ async function deposit() {
     .deposit(toHex(deposit.commitment))
     .send({ value: toWei(AMOUNT), from: web3.eth.defaultAccount, gas: 2e6 })
   console.log(`${BLOCK_EXPLORER_URL}/tx/${tx.transactionHash}`)
+  await waitForRecipient(tx.transactionHash)
   return `anonymous-bnb-${AMOUNT}-${netId}-${toHex(deposit.preimage, 62)}`
 }
 
